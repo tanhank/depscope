@@ -40,7 +40,7 @@ body:
     attributes:
       label: Environment
       description: Operating system, architecture, and Go or Node version.
-      placeholder: Linux amd64, Go 1.26.10
+      placeholder: Linux amd64, Go 1.26.11
     validations:
       required: true
   - type: textarea

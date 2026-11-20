@@ -96,7 +96,7 @@ As of Phase 8 verification (2026-10-26):
 - Do not install dependencies merely to prepare for future work.
 - Install dependencies only when the current approved phase requires them.
 - Use the package manager chosen for the project; do not introduce a second package manager.
-- Keep the validated toolchain baseline aligned with `go.mod` (`go 1.26.10`) unless a phase explicitly updates it.
+- Keep the validated toolchain baseline aligned with `go.mod` (`go 1.26.11`) unless a phase explicitly updates it.
 - Pin versions and commit lockfiles once manifests exist.
 - Do not add CI pipelines, release workflows, deployment infrastructure, or production integrations unless the phase explicitly authorizes them.
 - Verify a tool exists before documenting or using it. Distinguish commands actually run from anticipated commands.

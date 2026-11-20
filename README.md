@@ -69,7 +69,7 @@ A scan that could not read OSV is not a scan that found nothing. DepScope report
 | Component | Requirement |
 | --- | --- |
 | Prebuilt CLI | Linux, macOS, or Windows on `amd64` or `arm64`; `curl`, `tar`, and `sha256sum`/`shasum` on Unix |
-| Go CLI / API (source builds) | Go 1.26.10 or later (matching `go.mod`) |
+| Go CLI / API (source builds) | Go 1.26.11 or later (matching `go.mod`) |
 | Website | Node.js 24.22.0 (`.nvmrc`) and pnpm 12.14.0 |
 | VS Code extension | VS Code 1.90.0+, Node.js 20+, and the compiled `depscope-api` binary |
 | Live scans | Outbound HTTPS to the npm Registry, PyPI, and OSV.dev |
@@ -163,7 +163,7 @@ On macOS use `shasum -a 256 --check checksums.txt`; on Windows PowerShell compar
 
 Building from source is the path for development and for platforms without a prebuilt binary. End users should use the installer above.
 
-Install Go 1.26.10 or later, check out this repository, then build:
+Install Go 1.26.11 or later, check out this repository, then build:
 
 ```sh
 go build -trimpath -o bin/depscope ./cmd/depscope

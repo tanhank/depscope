@@ -12,7 +12,7 @@ DepScope is a dependency security tool. Contributions must keep its central prom
 
 ## Development setup
 
-Requirements: Go 1.26.10, Node.js 24.22.0, pnpm 12.14.0, and a Chromium browser for the website's browser tests.
+Requirements: Go 1.26.11, Node.js 24.22.0, pnpm 12.14.0, and a Chromium browser for the website's browser tests.
 
 Run the Go checks from the repository root:
 

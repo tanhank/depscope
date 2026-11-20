@@ -38,9 +38,9 @@ CI cross-compiles both command entry points for all six OS/architecture combinat
 
 ## Local package validation
 
-Install Go 1.26.10 and GoReleaser v2.18.2, then run from the repository root.
+Install Go 1.26.11 and GoReleaser v2.18.2, then run from the repository root.
 
-Go 1.26.10 builds the project, but `go install github.com/goreleaser/goreleaser/v2@v2.18.2` needs Go 1.27 or newer for its own module. `go install` therefore selects a newer toolchain automatically; this does not change the `go 1.26.10` directive in `go.mod`.
+Go 1.26.11 builds the project, but `go install github.com/goreleaser/goreleaser/v2@v2.18.2` needs Go 1.27 or newer for its own module. `go install` therefore selects a newer toolchain automatically; this does not change the `go 1.26.11` directive in `go.mod`.
 
 ```sh
 goreleaser check

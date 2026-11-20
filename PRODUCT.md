@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Existing Phase 6 scaffold: pnpm 12.14.0, Next.js 16.4.3 (App Router), React 19.3.0, TypeScript 5.9.3, Tailwind CSS 4.3.3, Node 24. Exact versions are pinned in the manifest and lockfile.
+Existing Phase 6 scaffold: pnpm 12.14.0, Next.js 16.4.5 (App Router), React 19.3.0, TypeScript 5.9.3, Tailwind CSS 4.3.3, Node 24. Exact versions are pinned in the manifest and lockfile.
 
 ## Users
 

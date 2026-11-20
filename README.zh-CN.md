@@ -69,7 +69,7 @@ DepScope 把下面三类信息始终保持可见的区分：
 | 组件 | 要求 |
 | --- | --- |
 | 预编译 CLI | Linux、macOS 或 Windows，架构为 `amd64` 或 `arm64`；Unix 上需要 `curl`、`tar` 与 `sha256sum`/`shasum` |
-| Go CLI / API（源码构建） | Go 1.26.10 或更高版本（与 `go.mod` 一致） |
+| Go CLI / API（源码构建） | Go 1.26.11 或更高版本（与 `go.mod` 一致） |
 | 网站 | Node.js 24.22.0（见 `.nvmrc`）与 pnpm 12.14.0 |
 | VS Code 插件 | VS Code 1.90.0+、Node.js 20+ 以及编译好的 `depscope-api` 可执行文件 |
 | 实时扫描 | 可访问 npm Registry、PyPI 与 OSV.dev 的 HTTPS 出站网络 |
@@ -163,7 +163,7 @@ macOS 上使用 `shasum -a 256 --check checksums.txt`；Windows PowerShell 中�
 
 从源码构建适用于开发场景，以及没有预编译二进制的平台。终端用户请使用上面的安装方式。
 
-安装 Go 1.26.10 或更高版本，检出本仓库后执行：
+安装 Go 1.26.11 或更高版本，检出本仓库后执行：
 
 ```sh
 go build -trimpath -o bin/depscope ./cmd/depscope
