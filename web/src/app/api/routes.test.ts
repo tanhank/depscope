@@ -5,17 +5,20 @@ import { liveFindingsReport } from "@/test/fixtures";
 const mocks = vi.hoisted(() => ({
   requestScan: vi.fn(),
   requestCompare: vi.fn(),
+  requestProjectScan: vi.fn(),
   checkApiHealth: vi.fn(),
 }));
 
 vi.mock("@/lib/api-client", () => ({
   requestScan: mocks.requestScan,
   requestCompare: mocks.requestCompare,
+  requestProjectScan: mocks.requestProjectScan,
   checkApiHealth: mocks.checkApiHealth,
 }));
 
 import { POST as scanPost } from "@/app/api/scan/route";
 import { POST as comparePost } from "@/app/api/compare/route";
+import { POST as projectPost } from "@/app/api/project/route";
 import { GET as healthGet } from "@/app/api/health/route";
 
 const SCAN_URL = "http://localhost/api/scan";
@@ -181,5 +184,40 @@ describe("GET /api/health", () => {
     );
     expect(unavailable.status).toBe(503);
     expect(await unavailable.json()).toEqual({ status: "unavailable" });
+  });
+});
+
+describe("POST /api/project", () => {
+  const PROJECT_URL = "http://localhost/api/project";
+
+  it("forwards valid project scan requests", async () => {
+    const mockResult = { root: "/path/to/project", status: "clean" };
+    mocks.requestProjectScan.mockResolvedValue({ ok: true, value: mockResult });
+
+    const response = await projectPost(
+      post(PROJECT_URL, JSON.stringify({ path: "/path/to/project" })),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(mockResult);
+    expect(mocks.requestProjectScan).toHaveBeenCalledWith(
+      "/path/to/project",
+      expect.anything(),
+    );
+  });
+
+  it("rejects empty path", async () => {
+    const response = await projectPost(
+      post(PROJECT_URL, JSON.stringify({ path: "   " })),
+    );
+    expect(response.status).toBe(400);
+    expect((await readError(response)).error.code).toBe("invalid_request");
+  });
+
+  it("rejects query parameters", async () => {
+    const response = await projectPost(
+      post(`${PROJECT_URL}?query=1`, JSON.stringify({ path: "/tmp" })),
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.requestProjectScan).not.toHaveBeenCalled();
   });
 });

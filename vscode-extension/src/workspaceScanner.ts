@@ -34,6 +34,10 @@ export async function getDiscoveredManifests(): Promise<DiscoveredManifest[]> {
     "**/requirements*.txt",
     "**/{node_modules,.venv,venv,env}/**"
   );
+  const poetryUris = await vscode.workspace.findFiles(
+    "**/poetry.lock",
+    "**/{node_modules,.venv,venv,env}/**"
+  );
 
   const rootFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
 
@@ -76,6 +80,22 @@ export async function getDiscoveredManifests(): Promise<DiscoveredManifest[]> {
     }
   }
 
+  for (const uri of poetryUris) {
+    try {
+      const content = await fs.promises.readFile(uri.fsPath, "utf8");
+      const pkgs = content.match(/\[\[package\]\]/g) || [];
+      const rel = rootFolder ? path.relative(rootFolder, uri.fsPath) : path.basename(uri.fsPath);
+      manifests.push({
+        path: uri.fsPath,
+        relativePath: rel,
+        type: "pypi",
+        dependencyCount: pkgs.length,
+      });
+    } catch {
+      // 忽略无法读取的清单文件
+    }
+  }
+
   return manifests;
 }
 
@@ -98,9 +118,11 @@ async function extractDependenciesFromPackageJson(filePath: string): Promise<Dis
 
     const lockPath = path.join(path.dirname(filePath), "package-lock.json");
     const yarnPath = path.join(path.dirname(filePath), "yarn.lock");
+    const pnpmPath = path.join(path.dirname(filePath), "pnpm-lock.yaml");
     let lockPackages: Record<string, { version?: string }> | null = null;
     let lockDependencies: Record<string, { version?: string }> | null = null;
     const yarnVersions: Record<string, string> = {};
+    const pnpmVersions: Record<string, string> = {};
 
     if (fs.existsSync(lockPath)) {
       try {
@@ -144,6 +166,20 @@ async function extractDependenciesFromPackageJson(filePath: string): Promise<Dis
       } catch {
         // 容忍无法解析的 yarn.lock
       }
+    } else if (fs.existsSync(pnpmPath)) {
+      try {
+        const pnpmRaw = await fs.promises.readFile(pnpmPath, "utf8");
+        const matches = pnpmRaw.matchAll(/['"]?(@?[a-zA-Z0-9_\-\.\/]+)@([0-9]+\.[0-9]+\.[0-9]+[^:'"\(]*)/g);
+        for (const m of matches) {
+          const n = m[1].replace(/^\//, "");
+          const v = m[2];
+          if (!pnpmVersions[n]) {
+            pnpmVersions[n] = v;
+          }
+        }
+      } catch {
+        // 容忍无法解析的 pnpm-lock.yaml
+      }
     }
 
     for (const [name, spec] of Object.entries(deps)) {
@@ -160,6 +196,9 @@ async function extractDependenciesFromPackageJson(filePath: string): Promise<Dis
       }
       if (!resolvedVersion && yarnVersions[name]) {
         resolvedVersion = yarnVersions[name];
+      }
+      if (!resolvedVersion && pnpmVersions[name]) {
+        resolvedVersion = pnpmVersions[name];
       }
 
       if (!resolvedVersion && typeof spec === "string") {
@@ -218,6 +257,33 @@ async function extractDependenciesFromRequirementsTxt(filePath: string): Promise
 }
 
 /**
+ * 从单个 poetry.lock 提取已锁定的依赖项。
+ */
+async function extractDependenciesFromPoetryLock(filePath: string): Promise<DiscoveredDependency[]> {
+  const results: DiscoveredDependency[] = [];
+  try {
+    const content = await fs.promises.readFile(filePath, "utf8");
+    const blocks = content.split(/\[\[package\]\]/);
+    for (const block of blocks) {
+      const nameMatch = block.match(/name\s*=\s*["']([^"']+)["']/);
+      const verMatch = block.match(/version\s*=\s*["']([^"']+)["']/);
+      if (nameMatch && verMatch) {
+        const name = nameMatch[1].toLowerCase().replace(/_/g, "-");
+        results.push({
+          ecosystem: "pypi",
+          name,
+          version: verMatch[1],
+          sourceFile: filePath,
+        });
+      }
+    }
+  } catch {
+    // 忽略异常
+  }
+  return results;
+}
+
+/**
  * 扫描指定清单文件（若未指定则扫描全部）。
  *
  * @param baseUrl 本地 API 服务的基地址
@@ -236,8 +302,12 @@ export async function scanWorkspaceDependencies(
 
   if (manifestPaths && manifestPaths.length > 0) {
     for (const mPath of manifestPaths) {
-      if (path.basename(mPath).toLowerCase().endsWith(".json")) {
+      const base = path.basename(mPath).toLowerCase();
+      if (base.endsWith(".json")) {
         const deps = await extractDependenciesFromPackageJson(mPath);
+        allDeps.push(...deps);
+      } else if (base === "poetry.lock") {
+        const deps = await extractDependenciesFromPoetryLock(mPath);
         allDeps.push(...deps);
       } else {
         const deps = await extractDependenciesFromRequirementsTxt(mPath);
@@ -247,8 +317,11 @@ export async function scanWorkspaceDependencies(
   } else {
     const manifests = await getDiscoveredManifests();
     for (const m of manifests) {
+      const base = path.basename(m.path).toLowerCase();
       if (m.type === "npm") {
         allDeps.push(...(await extractDependenciesFromPackageJson(m.path)));
+      } else if (base === "poetry.lock") {
+        allDeps.push(...(await extractDependenciesFromPoetryLock(m.path)));
       } else {
         allDeps.push(...(await extractDependenciesFromRequirementsTxt(m.path)));
       }

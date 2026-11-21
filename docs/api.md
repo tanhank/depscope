@@ -24,6 +24,7 @@ Build the API with `go build -o depscope-api ./cmd/depscope-api`. A checkout wit
 | `GET` | `/healthz` | none | `200` with `{"status":"ok"}` |
 | `POST` | `/api/v1/scan` | one package object | `200` with a canonical `ScanReport` object |
 | `POST` | `/api/v1/compare` | `left` and `right` package objects | `200` with a comparison envelope |
+| `POST` | `/api/v1/project` | one project path object | `200` with a project scan result object |
 
 All request and response bodies use JSON. Success responses carry `Content-Type: application/json; charset=utf-8`. All responses carry `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
 
@@ -92,6 +93,24 @@ The comparison response is an API envelope that composes two canonical reports; 
 ```
 
 `request.version` is omitted when no version was supplied. If one side fails before producing a report, that side contains a generic `error` object instead of `report`, and the successful side is still returned with `200`. If both sides fail, the response is `502` with the standard error envelope. Internal failure text is logged by the server but never returned.
+
+### `POST /api/v1/project`
+
+Scans a project directory containing supported manifests and lockfiles (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `requirements.txt`, or `poetry.lock`).
+
+Request fields:
+
+| Field | Type | Required | Rules |
+| --- | --- | --- | --- |
+| `path` | string | yes | Non-empty project directory path on the host |
+
+Example:
+
+```sh
+curl -sS http://127.0.0.1:8080/api/v1/project \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"."}'
+```
 
 ## Validation behavior
 

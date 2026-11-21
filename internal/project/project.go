@@ -25,8 +25,12 @@ const (
 	FormatNPMPackageLock Format = "npm-package-lock-v2-v3"
 	// FormatNPMYarnLock 表示 package.json 与 yarn.lock v1。
 	FormatNPMYarnLock Format = "npm-yarn-lock-v1"
-	// FormatPythonRequirements 表示 requirements.txt 中的直接依赖；本阶段没有 Python 锁文件。
+	// FormatNPMPnpmLock 表示 package.json 与 pnpm-lock.yaml。
+	FormatNPMPnpmLock Format = "npm-pnpm-lock"
+	// FormatPythonRequirements 表示 requirements.txt 中的直接依赖。
 	FormatPythonRequirements Format = "python-requirements-txt"
+	// FormatPythonPoetryLock 表示 poetry.lock 与可选 pyproject.toml。
+	FormatPythonPoetryLock Format = "python-poetry-lock"
 )
 
 const (
@@ -108,14 +112,11 @@ type Detection struct {
 }
 
 var unsupportedDependencyFiles = map[string]struct{}{
-	"pnpm-lock.yaml":      {},
 	"npm-shrinkwrap.json": {},
 	"bun.lockb":           {},
 	"bun.lock":            {},
-	"poetry.lock":         {},
 	"Pipfile":             {},
 	"Pipfile.lock":        {},
-	"pyproject.toml":      {},
 	"setup.py":            {},
 	"setup.cfg":           {},
 	"uv.lock":             {},
@@ -162,6 +163,7 @@ func Detect(root string, limits Limits) (Detection, error) {
 	packageEntry, hasPackage := byName[manifestPackageJSON]
 	lockEntry, hasLock := byName[lockfilePackageLockJSON]
 	yarnEntry, hasYarn := byName[lockfileYarnLock]
+	pnpmEntry, hasPnpm := byName[lockfilePnpmLock]
 
 	if hasPackage && isSymlink(packageEntry) {
 		add("SYMLINKED_FILE_UNSUPPORTED", "package.json is a symbolic link and was not followed.")
@@ -197,9 +199,19 @@ func Detect(root string, limits Limits) (Detection, error) {
 			default:
 				candidate.LockfilePath = lockfileYarnLock
 			}
+		} else if hasPnpm {
+			candidate.Format = FormatNPMPnpmLock
+			switch {
+			case isSymlink(pnpmEntry):
+				add("SYMLINKED_FILE_UNSUPPORTED", "pnpm-lock.yaml is a symbolic link and was not followed.")
+			case !isRegular(pnpmEntry):
+				add("LOCKFILE_NOT_REGULAR", "pnpm-lock.yaml is not a regular file and was not read.")
+			default:
+				candidate.LockfilePath = lockfilePnpmLock
+			}
 		}
 		if candidate.LockfilePath == "" {
-			add("LOCKFILE_MISSING", "package-lock.json or yarn.lock is missing; dependency versions cannot be resolved from the manifest alone and latest versions are never substituted.")
+			add("LOCKFILE_MISSING", "package-lock.json, yarn.lock, or pnpm-lock.yaml is missing; dependency versions cannot be resolved from the manifest alone and latest versions are never substituted.")
 		}
 		detection.Candidates = append(detection.Candidates, candidate)
 	} else if hasLock {
@@ -213,6 +225,12 @@ func Detect(root string, limits Limits) (Detection, error) {
 			add("SYMLINKED_FILE_UNSUPPORTED", "yarn.lock is a symbolic link and was not followed.")
 		} else {
 			add("MANIFEST_MISSING", "yarn.lock exists without package.json, so declared direct dependencies cannot be identified.")
+		}
+	} else if hasPnpm {
+		if isSymlink(pnpmEntry) {
+			add("SYMLINKED_FILE_UNSUPPORTED", "pnpm-lock.yaml is a symbolic link and was not followed.")
+		} else {
+			add("MANIFEST_MISSING", "pnpm-lock.yaml exists without package.json, so declared direct dependencies cannot be identified.")
 		}
 	}
 
@@ -228,6 +246,25 @@ func Detect(root string, limits Limits) (Detection, error) {
 				Format:       FormatPythonRequirements,
 				ManifestPath: manifestRequirementsTxt,
 			})
+		}
+	}
+
+	if poetryEntry, ok := byName[lockfilePoetryLock]; ok {
+		switch {
+		case isSymlink(poetryEntry):
+			add("SYMLINKED_FILE_UNSUPPORTED", "poetry.lock is a symbolic link and was not followed.")
+		case !isRegular(poetryEntry):
+			add("LOCKFILE_NOT_REGULAR", "poetry.lock is not a regular file and was not read.")
+		default:
+			candidate := Candidate{
+				Ecosystem:    model.EcosystemPyPI,
+				Format:       FormatPythonPoetryLock,
+				LockfilePath: lockfilePoetryLock,
+			}
+			if pyprojectEntry, hasPyproject := byName[manifestPyprojectToml]; hasPyproject && isRegular(pyprojectEntry) && !isSymlink(pyprojectEntry) {
+				candidate.ManifestPath = manifestPyprojectToml
+			}
+			detection.Candidates = append(detection.Candidates, candidate)
 		}
 	}
 
@@ -313,58 +350,57 @@ const (
 
 // DependencyEvidence 记录支持依赖分类的清单或锁文件字段。
 type DependencyEvidence struct {
-	Path  string
-	Field string
+	Path  string `json:"path"`
+	Field string `json:"field"`
 }
 
 // DependencyContext 汇总一条发现对应的依赖上下文；
 // 它只描述依赖如何进入项目，不表示漏洞可利用性或代码可达性。
 type DependencyContext struct {
-	Relationship model.DependencyRelationship
-	Scopes       []DependencyScope
-	Resolution   DependencyResolution
-	Evidence     []DependencyEvidence
+	Relationship model.DependencyRelationship `json:"relationship"`
+	Scopes       []DependencyScope            `json:"scopes"`
+	Resolution   DependencyResolution         `json:"resolution"`
+	Evidence     []DependencyEvidence         `json:"evidence"`
 }
 
 // Node 在共享依赖节点模型上附加清单声明的版本约束与依赖分类。
 type Node struct {
 	model.DependencyNode
-	Constraint    string
-	Scopes        []DependencyScope
-	ScopeEvidence []DependencyEvidence
+	Constraint    string               `json:"constraint,omitempty"`
+	Scopes        []DependencyScope    `json:"scopes,omitempty"`
+	ScopeEvidence []DependencyEvidence `json:"scopeEvidence,omitempty"`
 }
 
 // Graph 表示以项目为根节点的依赖图；根节点不对应虚构的包标识。
 type Graph struct {
-	RootID string
-	Nodes  []Node
+	RootID string `json:"rootId"`
+	Nodes  []Node `json:"nodes"`
 }
 
 // FormatInfo 描述一个已发现格式及其解析覆盖情况。
 type FormatInfo struct {
-	Ecosystem          model.Ecosystem
-	Format             Format
-	ManifestPath       string
-	LockfilePath       string
-	ResolvedPackages   int
-	UnresolvedPackages int
-	Resolution         DependencyResolution
+	Ecosystem          model.Ecosystem      `json:"ecosystem"`
+	Format             Format               `json:"format"`
+	ManifestPath       string               `json:"manifestPath"`
+	LockfilePath       string               `json:"lockfilePath,omitempty"`
+	ResolvedPackages   int                  `json:"resolvedPackages"`
+	UnresolvedPackages int                  `json:"unresolvedPackages"`
+	Resolution         DependencyResolution `json:"resolution"`
 }
 
 // Result 复用共享的发现、检查、来源与限制模型，并附加项目依赖图。
 type Result struct {
-	Root         string
-	ScannedAt    time.Time
-	Status       model.ScanStatus
-	Formats      []FormatInfo
-	Dependencies Graph
-	Findings     []model.Finding
-	Checks       []model.CheckResult
-	Sources      []model.SourceReference
-	Limitations  []model.Limitation
-	Summary      model.Summary
-	// FindingContexts 以发现 ID 为键保存依赖上下文；项目结果不进入 v1 线协议。
-	FindingContexts map[string]DependencyContext
+	Root            string                       `json:"root"`
+	ScannedAt       time.Time                    `json:"scannedAt"`
+	Status          model.ScanStatus             `json:"status"`
+	Formats         []FormatInfo                 `json:"formats"`
+	Dependencies    Graph                        `json:"dependencies"`
+	Findings        []model.Finding              `json:"findings"`
+	Checks          []model.CheckResult          `json:"checks"`
+	Sources         []model.SourceReference      `json:"sources"`
+	Limitations     []model.Limitation           `json:"limitations"`
+	Summary         model.Summary                `json:"summary"`
+	FindingContexts map[string]DependencyContext `json:"findingContexts,omitempty"`
 }
 
 // Scan 在项目根目录内检测受支持格式，解析已安装版本并调用共享引擎查询漏洞。
@@ -447,8 +483,12 @@ func Scan(ctx context.Context, root string, opts Options) (Result, error) {
 			project, err = parseNPMProject(ctx, absolute, candidate, budget, clock)
 		case candidate.Ecosystem == model.EcosystemNPM && candidate.Format == FormatNPMYarnLock:
 			project, err = parseYarnProject(ctx, absolute, candidate, budget, clock)
+		case candidate.Ecosystem == model.EcosystemNPM && candidate.Format == FormatNPMPnpmLock:
+			project, err = parsePnpmProject(ctx, absolute, candidate, budget, clock)
 		case candidate.Ecosystem == model.EcosystemPyPI && candidate.Format == FormatPythonRequirements:
 			project, err = parsePythonProject(ctx, absolute, candidate, budget, clock)
+		case candidate.Ecosystem == model.EcosystemPyPI && candidate.Format == FormatPythonPoetryLock:
+			project, err = parsePoetryProject(ctx, absolute, candidate, budget, clock)
 		default:
 			err = fmt.Errorf("unsupported project format %q for ecosystem %q", candidate.Format, candidate.Ecosystem)
 		}

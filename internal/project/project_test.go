@@ -321,14 +321,14 @@ func TestDetectSupportedProjects(t *testing.T) {
 func TestDetectReportsUnsupportedFormats(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "package.json", `{"name":"demo-app","dependencies":{}}`)
-	writeTestFile(t, dir, "pnpm-lock.yaml", "lockfileVersion: '6.0'\n")
+	writeTestFile(t, dir, "bun.lockb", "binary content\n")
 
 	detection, err := Detect(dir, DefaultLimits())
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
-	if len(detection.Unsupported) != 1 || detection.Unsupported[0] != "pnpm-lock.yaml" {
-		t.Fatalf("unsupported = %v, want [pnpm-lock.yaml]", detection.Unsupported)
+	if len(detection.Unsupported) != 1 || detection.Unsupported[0] != "bun.lockb" {
+		t.Fatalf("unsupported = %v, want [bun.lockb]", detection.Unsupported)
 	}
 	if !hasDetectionLimitation(detection, "UNSUPPORTED_FORMAT") {
 		t.Fatalf("missing UNSUPPORTED_FORMAT limitation: %+v", detection.Limitations)

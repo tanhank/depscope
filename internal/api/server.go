@@ -14,12 +14,14 @@ import (
 	"github.com/janghotan/depscope/internal/app"
 	"github.com/janghotan/depscope/internal/contract"
 	"github.com/janghotan/depscope/internal/model"
+	"github.com/janghotan/depscope/internal/project"
 )
 
 // ScanService 是 HTTP 层依赖的最小服务契约；真实实现为 app.LiveService。
 type ScanService interface {
 	ScanPackage(ctx context.Context, request app.PackageRequest, progress func(app.Progress)) (model.ScanReport, error)
 	Compare(ctx context.Context, request app.CompareRequest, progress func(app.Progress)) (app.Comparison, error)
+	ScanProject(ctx context.Context, request app.ProjectRequest, progress func(app.Progress)) (project.Result, error)
 }
 
 // Options 配置 HTTP 服务；Service 必须由调用方提供。
@@ -91,9 +93,28 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/v1/scan", s.apiChain(requireMethod(http.MethodPost, http.HandlerFunc(s.handleScan))))
 	mux.Handle("/api/v1/compare", s.apiChain(requireMethod(http.MethodPost, http.HandlerFunc(s.handleCompare))))
+	mux.Handle("/api/v1/project", s.apiChain(requireMethod(http.MethodPost, http.HandlerFunc(s.handleProject))))
 	mux.Handle("/healthz", s.recoverPanic(s.securityHeaders(requireMethod(http.MethodGet, http.HandlerFunc(s.handleHealth)))))
 	mux.Handle("/", s.recoverPanic(s.securityHeaders(http.HandlerFunc(s.handleNotFound))))
 	return mux
+}
+
+func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
+	if r.URL.RawQuery != "" {
+		writeError(w, http.StatusBadRequest, codeInvalidRequest, "query parameters are not supported")
+		return
+	}
+	request, requestErr := s.decodeProjectRequest(w, r)
+	if requestErr != nil {
+		writeRequestError(w, requestErr)
+		return
+	}
+	result, err := s.service.ScanProject(r.Context(), request, nil)
+	if err != nil {
+		s.writeServiceFailure(w, "project", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {

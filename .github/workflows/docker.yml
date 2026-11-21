@@ -1,0 +1,70 @@
+# GitHub Actions 工作流：自动构建并发布多架构 Docker 镜像至 GitHub Container Registry (ghcr.io)
+name: Docker Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    name: Build & Publish Container Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # 配置 QEMU 模拟环境，支持多架构 (linux/amd64, linux/arm64) 构建
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4460bfa22da0b148556f4387c55c
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
+
+      # 登录至 GitHub Container Registry
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 提取 release 标签或设置回退版本
+      - name: Determine Docker Tags
+        id: meta
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
+            VERSION="latest"
+          fi
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "repo=${REPO_LOWER}" >> "$GITHUB_OUTPUT"
+
+      # 构建并推送 depscope-api 镜像
+      - name: Build and push API image
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4
+        with:
+          context: .
+          file: ./Dockerfile.api
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.repo }}-api:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ steps.meta.outputs.repo }}-api:latest
+
+      # 构建并推送 depscope-web 镜像
+      - name: Build and push Web image
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4
+        with:
+          context: .
+          file: ./web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.repo }}-web:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ steps.meta.outputs.repo }}-web:latest

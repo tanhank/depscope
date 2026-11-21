@@ -351,6 +351,20 @@ export function requestCompare(
   });
 }
 
+/** 调用共享 API 的 project 端点扫描本地项目。 */
+export function requestProjectScan(
+  projectPath: string,
+  options: ApiClientOptions = {},
+): Promise<ApiResult<unknown>> {
+  return callApi({
+    ...options,
+    method: "POST",
+    path: "/api/v1/project",
+    body: { path: projectPath },
+    parse: (value) => value,
+  });
+}
+
 /** 顶部状态条使用；失败只返回 false，不暴露上游地址或细节。 */
 export async function checkApiHealth(
   options: ApiClientOptions = {},

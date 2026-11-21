@@ -17,11 +17,13 @@ import (
 	"github.com/janghotan/depscope/internal/app"
 	"github.com/janghotan/depscope/internal/contract"
 	"github.com/janghotan/depscope/internal/model"
+	"github.com/janghotan/depscope/internal/project"
 )
 
 type fakeService struct {
 	scanFn    func(context.Context, app.PackageRequest) (model.ScanReport, error)
 	compareFn func(context.Context, app.CompareRequest) (app.Comparison, error)
+	projectFn func(context.Context, app.ProjectRequest) (project.Result, error)
 
 	mu    sync.Mutex
 	scans []app.PackageRequest
@@ -42,6 +44,13 @@ func (f *fakeService) Compare(ctx context.Context, request app.CompareRequest, _
 		return app.Comparison{}, errors.New("fake service has no compare function")
 	}
 	return f.compareFn(ctx, request)
+}
+
+func (f *fakeService) ScanProject(ctx context.Context, request app.ProjectRequest, _ func(app.Progress)) (project.Result, error) {
+	if f.projectFn == nil {
+		return project.Result{}, errors.New("fake service has no project function")
+	}
+	return f.projectFn(ctx, request)
 }
 
 func (f *fakeService) recordedScans() []app.PackageRequest {
@@ -926,5 +935,45 @@ func TestNewServerRejectsInvalidConfig(t *testing.T) {
 	config.RequestTimeout = 0
 	if _, err := api.NewServer(api.Options{Config: config, Service: &fakeService{}}); err == nil {
 		t.Fatal("NewServer() error = nil, want config validation error")
+	}
+}
+
+// TestProjectEndpoint 验证 POST /api/v1/project 路径校验与正常返回。
+func TestProjectEndpoint(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeService{
+		projectFn: func(_ context.Context, req app.ProjectRequest) (project.Result, error) {
+			return project.Result{
+				Root:   req.Path,
+				Status: model.StatusClean,
+			}, nil
+		},
+	}
+	server := newServer(t, svc, nil)
+
+	// 1. 成功请求
+	rec := postJSON(server.Handler(), "/api/v1/project", `{"path":"/tmp/test-project"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+	var res project.Result
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to decode project result: %v", err)
+	}
+	if res.Root != "/tmp/test-project" || res.Status != model.StatusClean {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+
+	// 2. 空路径拒绝
+	badRec := postJSON(server.Handler(), "/api/v1/project", `{"path":""}`)
+	if badRec.Code != http.StatusBadRequest {
+		t.Fatalf("bad status = %d, want 400", badRec.Code)
+	}
+
+	// 3. 未知字段拒绝
+	unknownRec := postJSON(server.Handler(), "/api/v1/project", `{"path":"/tmp","extra":"yes"}`)
+	if unknownRec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown field status = %d, want 400", unknownRec.Code)
 	}
 }

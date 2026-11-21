@@ -97,6 +97,31 @@ func (s *Server) decodeScanRequest(w http.ResponseWriter, r *http.Request) (app.
 	return parseScanPayload(fields, "")
 }
 
+func (s *Server) decodeProjectRequest(w http.ResponseWriter, r *http.Request) (app.ProjectRequest, *requestError) {
+	fields, requestErr := s.decodeJSONObject(w, r)
+	if requestErr != nil {
+		return app.ProjectRequest{}, requestErr
+	}
+	for key := range fields {
+		if key != "path" {
+			return app.ProjectRequest{}, badRequest(codeUnknownField, "request contains an unknown field")
+		}
+	}
+	rawPath, exists := fields["path"]
+	if !exists {
+		return app.ProjectRequest{}, badRequest(codeInvalidRequest, "missing required field 'path'")
+	}
+	var pathStr string
+	if err := json.Unmarshal(rawPath, &pathStr); err != nil {
+		return app.ProjectRequest{}, badRequest(codeInvalidRequest, "field 'path' must be a string")
+	}
+	pathStr = strings.TrimSpace(pathStr)
+	if pathStr == "" {
+		return app.ProjectRequest{}, badRequest(codeInvalidRequest, "field 'path' must not be empty")
+	}
+	return app.ProjectRequest{Path: pathStr}, nil
+}
+
 func (s *Server) decodeCompareRequest(w http.ResponseWriter, r *http.Request) (app.CompareRequest, *requestError) {
 	fields, requestErr := s.decodeJSONObject(w, r)
 	if requestErr != nil {
