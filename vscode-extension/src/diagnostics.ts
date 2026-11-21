@@ -67,7 +67,10 @@ export async function updateDiagnostics(reports: ScanReport[]): Promise<void> {
 
   // 查找工作区内的所有 package.json 与 requirements.txt 文件
   const packageJsonUris = await vscode.workspace.findFiles("**/package.json", "**/node_modules/**");
-  const requirementsUris = await vscode.workspace.findFiles("**/requirements*.txt", "**/node_modules/**");
+  const requirementsUris = await vscode.workspace.findFiles(
+    "**/requirements*.txt",
+    "**/{node_modules,.venv,venv,env}/**"
+  );
 
   // 1. 处理 package.json
   for (const uri of packageJsonUris) {
@@ -127,7 +130,7 @@ export async function updateDiagnostics(reports: ScanReport[]): Promise<void> {
         const pkgName = report.target.package.name;
         // PyPI 规范名大小写不敏感，且下划线与连字符等价
         const normalizedName = escapeRegExp(pkgName).replace(/[-_]/g, "[-_]");
-        const regex = new RegExp(`^\\s*(${normalizedName})(?:==|===|>=|<=|~=|>|<|!=)\\s*([^#\\s]+)`, "i");
+        const regex = new RegExp(`^\\s*(${normalizedName})\\s*(?:==|===|>=|<=|~=|>|<|!=)\\s*([^#\\s]+)`, "i");
 
         for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
           const line = lines[lineIdx];

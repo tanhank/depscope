@@ -1,5 +1,28 @@
+import * as fs from "fs";
 import * as path from "path";
 import { runTests } from "@vscode/test-electron";
+
+/**
+ * 探测系统已安装的 VS Code 可执行文件路径。
+ */
+function findSystemCode(): string | undefined {
+  if (process.env.VSCODE_PATH && fs.existsSync(process.env.VSCODE_PATH)) {
+    return process.env.VSCODE_PATH;
+  }
+  const binaryName = process.platform === "win32" ? "code.cmd" : "code";
+  const pathDirs = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
+  for (const dir of pathDirs) {
+    const candidate = path.join(dir, binaryName);
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        return candidate;
+      }
+    } catch {
+      // 忽略无权限或不存在的目录
+    }
+  }
+  return undefined;
+}
 
 async function main() {
   try {
@@ -10,9 +33,11 @@ async function main() {
       "../../../testdata/fixtures/projects/npm-context"
     );
 
-    // 运行测试并启动 Extension Development Host，直接使用系统已安装的 VS Code
+    const vscodeExecutablePath = findSystemCode();
+
+    // 运行测试并启动 Extension Development Host
     await runTests({
-      vscodeExecutablePath: "/usr/bin/code",
+      ...(vscodeExecutablePath ? { vscodeExecutablePath } : {}),
       extensionDevelopmentPath,
       extensionTestsPath,
       launchArgs: [testWorkspace, "--disable-extensions"],

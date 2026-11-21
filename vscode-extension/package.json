@@ -60,6 +60,21 @@
         "category": "DepScope"
       }
     ],
+    "configuration": {
+      "title": "DepScope",
+      "properties": {
+        "depscope.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to the depscope-api binary (leave empty to discover automatically)."
+        },
+        "depscope.apiUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Optional URL of an existing DepScope API service (e.g. http://127.0.0.1:54321). If provided, DepScope will connect to this API instead of spawning a local process."
+        }
+      }
+    },
     "menus": {
       "view/title": [
         {

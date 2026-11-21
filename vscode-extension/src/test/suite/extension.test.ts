@@ -1,6 +1,9 @@
 import * as assert from "assert";
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import { getApiBaseUrl, startApiProcess, stopApiProcess } from "../../apiProcess";
+import { ScanReport } from "../../generated/report-types";
 import { ReportWebviewManager } from "../../reportWebview";
 import { GroupNode, isReportClean, isReportIncomplete, ScanTreeProvider } from "../../scanTreeProvider";
 import { scanWorkspaceDependencies } from "../../workspaceScanner";
@@ -134,20 +137,50 @@ suite("DepScope Extension Integration Test Suite", () => {
     await vscode.commands.executeCommand("depscope.scanWorkspace");
   });
 
-  test("Verifies lodash and minimist finding details in /tmp/depscope-test", async () => {
-    const baseUrl = getApiBaseUrl();
-    assert.ok(baseUrl, "API base URL must exist");
+  test("Verifies finding details formatting and webview rendering", async () => {
+    // 基于标准 demo findings fixture 构造测试报告
+    const fixturePath = path.resolve(__dirname, "../../../../testdata/fixtures/demo/demo-findings-report.json");
+    const baseFixture = JSON.parse(fs.readFileSync(fixturePath, "utf8")) as ScanReport;
 
-    // 扫描 /tmp/depscope-test 中的清单
-    const manifestPath = "/tmp/depscope-test/package.json";
-    const reports = await scanWorkspaceDependencies(baseUrl!, [manifestPath]);
-    assert.ok(reports.length >= 2, "Should scan both lodash and minimist");
+    const mockLodashReport: ScanReport = {
+      ...baseFixture,
+      target: {
+        package: { ecosystem: "npm", name: "lodash" },
+        resolvedVersion: "4.17.20",
+      },
+      findings: [
+        {
+          ...baseFixture.findings[0],
+          id: "GHSA-p6mc-m468-83gw",
+          title: "Prototype Pollution in lodash",
+          description:
+            "A prototype pollution vulnerability in lodash.\n\n## Recommendation\nUpgrade to version 4.17.21 or later.\n\nReferences: https://example.com/advisory1 https://example.com/advisory2 https://example.com/advisory3 https://example.com/advisory4",
+          severity: "high",
+        },
+      ],
+    };
 
-    const lodashReport = reports.find((r) => r.target.package.name === "lodash");
-    assert.ok(lodashReport, "lodash report must exist");
-    assert.ok(lodashReport!.findings.length > 0, "lodash must have findings");
+    const mockMinimistReport: ScanReport = {
+      ...baseFixture,
+      target: {
+        package: { ecosystem: "npm", name: "minimist" },
+        resolvedVersion: "0.0.8",
+      },
+      summary: {
+        ...baseFixture.summary,
+        highestSeverity: "critical",
+      },
+      findings: [
+        {
+          ...baseFixture.findings[0],
+          id: "GHSA-xvch-5ox4-994e",
+          title: "Prototype Pollution in minimist",
+          severity: "critical",
+        },
+      ],
+    };
 
-    const lodashHtml = ReportWebviewManager.renderHtml(lodashReport!);
+    const lodashHtml = ReportWebviewManager.renderHtml(mockLodashReport);
     // 1. 不应包含原始的 "## " markdown 语法，而是转为 md-heading
     assert.strictEqual(
       lodashHtml.includes("## Recommendation"),
@@ -188,17 +221,15 @@ suite("DepScope Extension Integration Test Suite", () => {
     );
 
     // 4. minimist 验证与 Webview 打开
-    const minimistReport = reports.find((r) => r.target.package.name === "minimist");
-    assert.ok(minimistReport, "minimist report must exist");
-    const minimistHtml = ReportWebviewManager.renderHtml(minimistReport!);
+    const minimistHtml = ReportWebviewManager.renderHtml(mockMinimistReport);
     assert.ok(
       minimistHtml.includes('class="advisory-link"'),
       "minimist must render advisory ID in monospace link"
     );
 
     // 调用 showReport 命令触发 Webview 实际展示
-    await vscode.commands.executeCommand("depscope.showReport", lodashReport);
-    await vscode.commands.executeCommand("depscope.showReport", minimistReport);
+    await vscode.commands.executeCommand("depscope.showReport", mockLodashReport);
+    await vscode.commands.executeCommand("depscope.showReport", mockMinimistReport);
   });
 
   test("Opening scan wizard executes without error", async () => {

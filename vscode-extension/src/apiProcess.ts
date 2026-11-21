@@ -3,10 +3,13 @@ import * as fs from "fs";
 import * as net from "net";
 import * as path from "path";
 import * as vscode from "vscode";
+import { checkHealth } from "./apiClient";
 
 // 保存当前运行的 API 子进程句柄与基地址。
 let apiProcess: child_process.ChildProcess | null = null;
 let apiBaseUrl: string | null = null;
+let isExternalApi = false;
+let apiStartingPromise: Promise<string> | null = null;
 let outputChannel: vscode.OutputChannel | null = null;
 
 /**
@@ -51,9 +54,20 @@ export function resolveBinaryPath(): string | null {
     ? ["depscope-api.cmd", "depscope-api.exe", "depscope-api"]
     : ["depscope-api"];
 
+  // 1. 检查 VS Code 配置项 depscope.binaryPath
+  const configPath = vscode.workspace.getConfiguration("depscope").get<string>("binaryPath");
+  if (configPath && fs.existsSync(configPath)) {
+    return configPath;
+  }
+
+  // 2. 检查环境变量 DEPSCOPE_API_PATH
+  if (process.env.DEPSCOPE_API_PATH && fs.existsSync(process.env.DEPSCOPE_API_PATH)) {
+    return process.env.DEPSCOPE_API_PATH;
+  }
+
   const folders = vscode.workspace.workspaceFolders || [];
 
-  // 1. 检查工作区 node_modules/.bin
+  // 3. 检查工作区 node_modules/.bin
   for (const folder of folders) {
     const binDir = path.join(folder.uri.fsPath, "node_modules", ".bin");
     for (const name of binaryNames) {
@@ -64,7 +78,7 @@ export function resolveBinaryPath(): string | null {
     }
   }
 
-  // 2. 检查系统 PATH
+  // 4. 检查系统 PATH
   const envPath = process.env.PATH || "";
   const pathDirs = envPath.split(path.delimiter).filter(Boolean);
   for (const dir of pathDirs) {
@@ -83,16 +97,25 @@ export function resolveBinaryPath(): string | null {
     }
   }
 
-  // 3. 检查工作区本地 bin 目录或根目录构建文件
+  // 5. 检查工作区本地 bin 目录或根目录构建文件，并向上查找父目录
   for (const folder of folders) {
-    const localCandidates = [
-      path.join(folder.uri.fsPath, "bin", isWindows ? "depscope-api.exe" : "depscope-api"),
-      path.join(folder.uri.fsPath, isWindows ? "depscope-api.exe" : "depscope-api"),
-    ];
-    for (const candidate of localCandidates) {
-      if (fs.existsSync(candidate)) {
-        return candidate;
+    let currentDir = folder.uri.fsPath;
+    for (let depth = 0; depth < 5; depth++) {
+      for (const name of binaryNames) {
+        const binCandidate = path.join(currentDir, "bin", name);
+        if (fs.existsSync(binCandidate)) {
+          return binCandidate;
+        }
+        const rootCandidate = path.join(currentDir, name);
+        if (fs.existsSync(rootCandidate)) {
+          return rootCandidate;
+        }
       }
+      const parentDir = path.dirname(currentDir);
+      if (parentDir === currentDir) {
+        break;
+      }
+      currentDir = parentDir;
     }
   }
 
@@ -129,106 +152,157 @@ export async function findFreePort(): Promise<number> {
  * 启动后台 depscope-api 进程，监听显式分配的空闲端口并返回基地址。
  */
 export async function startApiProcess(): Promise<string> {
-  if (apiBaseUrl && apiProcess && !apiProcess.killed) {
+  if (apiBaseUrl && (isExternalApi || (apiProcess && !apiProcess.killed))) {
     return apiBaseUrl;
   }
-
-  const binaryPath = resolveBinaryPath();
-  if (!binaryPath) {
-    const msg =
-      "DepScope API binary (depscope-api) not found. Please install depscope-api or ensure it is in your PATH / bin.";
-    void vscode.window.showErrorMessage(msg);
-    throw new Error(msg);
+  if (apiStartingPromise) {
+    return apiStartingPromise;
   }
 
-  const port = await findFreePort();
-  const out = getOutputChannel();
-  out.appendLine(`[DepScope] Found depscope-api binary at: ${binaryPath}`);
-  out.appendLine(`[DepScope] Allocated free port: ${port}`);
-
-  const cwd =
-    vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]
-      ? vscode.workspace.workspaceFolders[0].uri.fsPath
-      : process.cwd();
-
-  const env = {
-    ...process.env,
-    DEPSCOPE_API_ADDR: `127.0.0.1:${port}`,
-  };
-
-  out.appendLine(`[DepScope] Spawning ${binaryPath} with DEPSCOPE_API_ADDR=127.0.0.1:${port} in ${cwd}`);
-
-  return new Promise<string>((resolve, reject) => {
-    let settled = false;
-    let stderrBuffer = "";
-
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        reject(
-          new Error(
-            `Timeout waiting for DepScope API to start on port ${port}. Logs: ${stderrBuffer}`
-          )
-        );
-      }
-    }, 15000);
-
-    const child = child_process.spawn(binaryPath, [], {
-      cwd,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    apiProcess = child;
-
-    const handleOutput = (chunk: Buffer | string) => {
-      const text = chunk.toString();
-      stderrBuffer += text;
-      out.append(text);
-
-      if (!settled) {
-        if (
-          text.includes(`127.0.0.1:${port}`) ||
-          text.includes("DepScope API listening")
-        ) {
-          settled = true;
-          clearTimeout(timeout);
-          apiBaseUrl = `http://127.0.0.1:${port}`;
-          out.appendLine(`[DepScope] API process confirmed listening at ${apiBaseUrl}`);
-          resolve(apiBaseUrl);
+  apiStartingPromise = (async () => {
+    try {
+      // 检查是否配置了外部 API 服务地址
+      const configUrl =
+        vscode.workspace.getConfiguration("depscope").get<string>("apiUrl") ||
+        process.env.DEPSCOPE_API_URL;
+      if (configUrl) {
+        const trimmed = configUrl.trim().replace(/\/+$/, "");
+        if (trimmed) {
+          const healthy = await checkHealth(trimmed);
+          if (healthy) {
+            apiBaseUrl = trimmed;
+            isExternalApi = true;
+            getOutputChannel().appendLine(`[DepScope] Using configured external API at: ${apiBaseUrl}`);
+            return apiBaseUrl;
+          }
         }
       }
-    };
 
-    child.stdout?.on("data", handleOutput);
-    child.stderr?.on("data", handleOutput);
-
-    child.on("error", (err) => {
-      out.appendLine(`[DepScope] Process error: ${err.message}`);
-      if (!settled) {
-        settled = true;
-        clearTimeout(timeout);
-        reject(err);
+      isExternalApi = false;
+      const binaryPath = resolveBinaryPath();
+      if (!binaryPath) {
+        const msg =
+          "DepScope API binary (depscope-api) not found. Please install depscope-api or ensure it is in your PATH / bin.";
+        void vscode.window.showErrorMessage(msg);
+        throw new Error(msg);
       }
-    });
 
-    child.on("exit", (code, signal) => {
-      out.appendLine(`[DepScope] Process exited with code ${code}, signal ${signal}`);
-      apiProcess = null;
-      apiBaseUrl = null;
-      if (!settled) {
-        settled = true;
-        clearTimeout(timeout);
-        reject(
-          new Error(
-            `DepScope API process exited prematurely with code ${code}${
-              stderrBuffer ? `: ${stderrBuffer}` : ""
-            }`
-          )
-        );
-      }
-    });
-  });
+      const port = await findFreePort();
+      const out = getOutputChannel();
+      out.appendLine(`[DepScope] Found depscope-api binary at: ${binaryPath}`);
+      out.appendLine(`[DepScope] Allocated free port: ${port}`);
+
+      const cwd =
+        vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]
+          ? vscode.workspace.workspaceFolders[0].uri.fsPath
+          : process.cwd();
+
+      const env = {
+        ...process.env,
+        DEPSCOPE_API_ADDR: `127.0.0.1:${port}`,
+      };
+
+      out.appendLine(`[DepScope] Spawning ${binaryPath} with DEPSCOPE_API_ADDR=127.0.0.1:${port} in ${cwd}`);
+
+      return await new Promise<string>((resolve, reject) => {
+        let settled = false;
+        let stderrBuffer = "";
+
+        const timeout = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            clearInterval(healthInterval);
+            reject(
+              new Error(
+                `Timeout waiting for DepScope API to start on port ${port}. Logs: ${stderrBuffer}`
+              )
+            );
+          }
+        }, 15000);
+
+        const targetUrl = `http://127.0.0.1:${port}`;
+        // 轮询健康检查接口辅助快速确认就绪
+        const healthInterval = setInterval(async () => {
+          if (settled) {
+            clearInterval(healthInterval);
+            return;
+          }
+          const ok = await checkHealth(targetUrl, 200);
+          if (ok && !settled) {
+            settled = true;
+            clearTimeout(timeout);
+            clearInterval(healthInterval);
+            apiBaseUrl = targetUrl;
+            out.appendLine(`[DepScope] API confirmed healthy at ${apiBaseUrl}`);
+            resolve(apiBaseUrl);
+          }
+        }, 200);
+
+        const child = child_process.spawn(binaryPath, [], {
+          cwd,
+          env,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+
+        apiProcess = child;
+
+        const handleOutput = (chunk: Buffer | string) => {
+          const text = chunk.toString();
+          stderrBuffer += text;
+          out.append(text);
+
+          if (!settled) {
+            if (
+              stderrBuffer.includes(`127.0.0.1:${port}`) ||
+              stderrBuffer.includes("DepScope API listening")
+            ) {
+              settled = true;
+              clearTimeout(timeout);
+              clearInterval(healthInterval);
+              apiBaseUrl = targetUrl;
+              out.appendLine(`[DepScope] API process confirmed listening at ${apiBaseUrl}`);
+              resolve(apiBaseUrl);
+            }
+          }
+        };
+
+        child.stdout?.on("data", handleOutput);
+        child.stderr?.on("data", handleOutput);
+
+        child.on("error", (err) => {
+          out.appendLine(`[DepScope] Process error: ${err.message}`);
+          if (!settled) {
+            settled = true;
+            clearTimeout(timeout);
+            clearInterval(healthInterval);
+            reject(err);
+          }
+        });
+
+        child.on("exit", (code, signal) => {
+          out.appendLine(`[DepScope] Process exited with code ${code}, signal ${signal}`);
+          apiProcess = null;
+          apiBaseUrl = null;
+          if (!settled) {
+            settled = true;
+            clearTimeout(timeout);
+            clearInterval(healthInterval);
+            reject(
+              new Error(
+                `DepScope API process exited prematurely with code ${code}${
+                  stderrBuffer ? `: ${stderrBuffer}` : ""
+                }`
+              )
+            );
+          }
+        });
+      });
+    } finally {
+      apiStartingPromise = null;
+    }
+  })();
+
+  return apiStartingPromise;
 }
 
 /**
@@ -240,7 +314,11 @@ export function stopApiProcess(): void {
       outputChannel.appendLine("[DepScope] Stopping API process...");
     }
     try {
-      apiProcess.kill("SIGTERM");
+      if (process.platform === "win32" && apiProcess.pid) {
+        child_process.spawn("taskkill", ["/pid", apiProcess.pid.toString(), "/T", "/F"]);
+      } else {
+        apiProcess.kill("SIGTERM");
+      }
     } catch {
       try {
         apiProcess.kill("SIGKILL");
@@ -251,6 +329,7 @@ export function stopApiProcess(): void {
     apiProcess = null;
   }
   apiBaseUrl = null;
+  isExternalApi = false;
 }
 
 /**
