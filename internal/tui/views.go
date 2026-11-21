@@ -251,8 +251,12 @@ func (m *Model) menuNavLines(width int) []string {
 		shortcut := fmt.Sprintf("%d", index+1)
 		icon := m.icons.prefix(entry.icon)
 		focus := ""
-		if selected && m.anim.focus > 0 && m.anim.enabled {
-			focus = " ◂"
+		if selected {
+			if m.anim.focus > 0 && m.anim.enabled {
+				focus = " ◂"
+			} else {
+				focus = " ‹"
+			}
 		}
 		// 先按可见文本截断标题，再应用样式；否则 ANSI 序列会被计入宽度并截掉标题。
 		titleWidth := width - displayWidth(marker) - displayWidth(shortcut) - 2 - displayWidth(icon) - displayWidth(focus)
@@ -418,6 +422,8 @@ func (m *Model) demoView() string {
 			title = m.styles.selectedText(title)
 			if m.anim.focus > 0 && m.anim.enabled {
 				focus = m.styles.accentText(" ◂")
+			} else {
+				focus = m.styles.accentText(" ‹")
 			}
 		}
 		iconText := m.demoIconText(scenario.ID)
@@ -492,6 +498,8 @@ func (m *Model) settingsView() string {
 			marker = m.styles.accentText("› ")
 			if m.anim.focus > 0 && m.anim.enabled {
 				focus = m.styles.accentText(" ◂")
+			} else {
+				focus = m.styles.accentText(" ‹")
 			}
 		}
 		iconText := ""

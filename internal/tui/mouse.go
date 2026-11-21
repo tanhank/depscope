@@ -153,12 +153,9 @@ func (m *Model) menuIndexAt(contentY int, contentX int) int {
 		return -1
 	}
 
-	layout := layoutFor(width, height)
-	if layout == layoutTwoColumn {
-		leftWidth, _ := columnWidths(width)
-		if contentX > leftWidth+2 {
-			return -1
-		}
+	// 只要在有效宽度内，整行悬停或点击均响应对应菜单项
+	if contentX < 0 || contentX > width+marginWidth*2 {
+		return -1
 	}
 
 	return contentY - startMenuY

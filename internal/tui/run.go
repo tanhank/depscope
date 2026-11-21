@@ -18,7 +18,7 @@ func Run(ctx context.Context, service app.Service, opts Options) error {
 		model,
 		tea.WithContext(ctx),
 		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
+		tea.WithMouseAllMotion(),
 	)
 	_, err := program.Run()
 	return err
