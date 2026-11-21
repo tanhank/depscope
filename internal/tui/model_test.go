@@ -578,3 +578,108 @@ func mustIdentity(t *testing.T, ecosystem domain.Ecosystem, name string) domain.
 	}
 	return identity
 }
+
+// TestMouseInteraction 验证鼠标滚轮滚动与点击交互行为。
+func TestMouseInteraction(t *testing.T) {
+	model := newTestModel(t, &fakeService{})
+
+	// 1. 设置较小窗口高度以触发内容超出滚动
+	model.Update(tea.WindowSizeMsg{Width: 100, Height: 10})
+
+	// 测试鼠标滚轮向下滚动
+	send(model, tea.MouseMsg{
+		Button: tea.MouseButtonWheelDown,
+	})
+	if model.scroll == 0 {
+		t.Fatalf("scroll = 0 after wheel down, expected > 0 with small height")
+	}
+	// 测试鼠标滚轮向上滚动
+	send(model, tea.MouseMsg{
+		Button: tea.MouseButtonWheelUp,
+	})
+	if model.scroll != 0 {
+		t.Fatalf("scroll = %d after wheel up, want 0", model.scroll)
+	}
+
+	// 恢复标准窗口大小
+	model.Update(tea.WindowSizeMsg{Width: 100, Height: 32})
+
+	// 2. 测试主菜单中的鼠标左键点击
+	width := model.contentWidth()
+	height := model.contentHeight()
+	size := selectLogoSize(width, height)
+	logoLines := len(strings.Split(model.brandedLogo(size), "\n"))
+	startMenuY := logoLines + 2 + 2
+
+	// 点击第一个菜单项 (Check a single package)
+	send(model, tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      2 + startMenuY,
+	})
+	if model.screen != screenPackageForm {
+		t.Fatalf("screen = %v after clicking first menu entry, want %v", model.screen, screenPackageForm)
+	}
+
+	// 3. 测试点击顶部页眉返回主菜单
+	send(model, tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      5,
+		Y:      0,
+	})
+	if model.screen != screenMenu {
+		t.Fatalf("screen = %v after clicking header, want %v", model.screen, screenMenu)
+	}
+
+	// 点击设置菜单项 (索引 5)
+	send(model, tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      2 + startMenuY + 5,
+	})
+	if model.screen != screenSettings {
+		t.Fatalf("screen = %v after clicking settings entry, want %v", model.screen, screenSettings)
+	}
+
+	// 4. 测试设置界面中的点击切换
+	introLines := len(wrapPlain(model.text(i18n.KeySettingsIntro), width))
+	startSettingsY := 1 + 1 + introLines + 2
+	initialLanguage := model.language
+
+	// 点击第 0 行设置项 (Language)
+	send(model, tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      2 + startSettingsY,
+	})
+	if model.language == initialLanguage {
+		t.Fatalf("language did not change after clicking setting row 0, still %v", initialLanguage)
+	}
+
+	// 点击第 2 行设置项 (Color Mode)
+	initialColor := model.colorMode
+	send(model, tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      2 + startSettingsY + 2,
+	})
+	if model.colorMode == initialColor {
+		t.Fatalf("colorMode did not change after clicking setting row 2, still %s", initialColor)
+	}
+
+	// 点击顶部页眉返回主菜单
+	send(model, tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      5,
+		Y:      1,
+	})
+	if model.screen != screenMenu {
+		t.Fatalf("screen = %v after clicking header, want %v", model.screen, screenMenu)
+	}
+}

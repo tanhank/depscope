@@ -14,7 +14,12 @@ func Run(ctx context.Context, service app.Service, opts Options) error {
 		opts.Context = ctx
 	}
 	model := New(service, opts)
-	program := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
+	program := tea.NewProgram(
+		model,
+		tea.WithContext(ctx),
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
 	_, err := program.Run()
 	return err
 }
