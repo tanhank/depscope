@@ -143,3 +143,14 @@ Phase 1 established contracts only. Phase 2 implemented the engine and live sour
 Phase 5 does not authorize implementing the website, recursive Python resolution, additional lockfile or manifest formats, npm workspace or peer dependency scanning, project/inventory wire serialization, machine-readable CLI JSON output, authentication, persistence, telemetry, CI, release workflows, deployment, or live verification runs. Each later phase requires a separate, explicit instruction.
 
 Phase 6 (the Next.js website) is complete. Phase 7 is the owner-approved open-source launch and release-engineering scope. Recursive dependency resolution and live verification remain deferred and require agreed D8 semantics and a separate explicit instruction before code is written.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues (using the `gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context layout (`GLOSSARY.md` and `docs/adr/` at the repo root). See `docs/agents/domain.md`.
+
