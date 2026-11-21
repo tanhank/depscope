@@ -78,3 +78,13 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 打包 VS Code 扩展并附加到当前 GitHub Release 中
+      - name: Package VS Code extension
+        working-directory: vscode-extension
+        run: |
+          npm ci
+          npm run package
+      - name: Attach VS Code extension to release
+        run: gh release upload "${GITHUB_REF_NAME}" vscode-extension/*.vsix --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
