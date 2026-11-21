@@ -26,16 +26,23 @@ export async function syncContract() {
   await ensureDir(path.dirname(schemaTarget));
   await ensureDir(demoTargetDir);
 
-  const schema = await readFile(schemaSource, "utf8");
-  await writeFile(schemaTarget, schema, "utf8");
+  try {
+    const schema = await readFile(schemaSource, "utf8");
+    await writeFile(schemaTarget, schema, "utf8");
 
-  const files = (await readdir(demoSourceDir)).filter((name) => name.endsWith(".json")).sort();
-  for (const name of files) {
-    const source = await readFile(path.join(demoSourceDir, name), "utf8");
-    await writeFile(path.join(demoTargetDir, name), source, "utf8");
+    const files = (await readdir(demoSourceDir)).filter((name) => name.endsWith(".json")).sort();
+    for (const name of files) {
+      const source = await readFile(path.join(demoSourceDir, name), "utf8");
+      await writeFile(path.join(demoTargetDir, name), source, "utf8");
+    }
+
+    return { schema, demoNames: files };
+  } catch {
+    // 若根目录源文件不存在（例如在独立 Docker 上下文中构建），复用本地已同步契约文件
+    const schema = await readFile(schemaTarget, "utf8");
+    const files = (await readdir(demoTargetDir)).filter((name) => name.endsWith(".json")).sort();
+    return { schema, demoNames: files };
   }
-
-  return { schema, demoNames: files };
 }
 
 export async function renderTypes() {
