@@ -324,8 +324,10 @@ func (m *Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		m.menuIndex = wrapIndex(m.menuIndex-1, len(menuEntries))
+		return m, m.startFocus()
 	case "down", "j":
 		m.menuIndex = wrapIndex(m.menuIndex+1, len(menuEntries))
+		return m, m.startFocus()
 	case "enter":
 		return m, m.openScreen(menuEntries[m.menuIndex].target)
 	case "1", "2", "3", "4", "5", "6":
@@ -502,10 +504,12 @@ func (m *Model) handleDemoKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if len(m.demos) > 0 {
 			m.demoAt = wrapIndex(m.demoAt-1, len(m.demos))
+			return m, m.startFocus()
 		}
 	case "down", "j":
 		if len(m.demos) > 0 {
 			m.demoAt = wrapIndex(m.demoAt+1, len(m.demos))
+			return m, m.startFocus()
 		}
 	case "enter":
 		if len(m.demos) == 0 {
@@ -525,8 +529,10 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.returnToMenu()
 	case "up", "k":
 		m.settingsAt = wrapIndex(m.settingsAt-1, rowCount)
+		return m, m.startFocus()
 	case "down", "j":
 		m.settingsAt = wrapIndex(m.settingsAt+1, rowCount)
+		return m, m.startFocus()
 	case "enter", " ":
 		return m, m.changeSetting(false)
 	case "left", "h":
@@ -537,17 +543,19 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// changeSetting 修改当前设置项；返回的命令用于在主菜单重新播放品牌动画。
+// changeSetting 修改当前设置项；返回的命令用于在主菜单重新播放品牌动画或触发强调动效。
 func (m *Model) changeSetting(backward bool) tea.Cmd {
 	switch m.settingsAt {
 	case 0:
 		m.applyLanguage(m.language.Toggle())
+		return m.startFocus()
 	case 1:
 		if m.ecosystem == model.EcosystemNPM {
 			m.ecosystem = model.EcosystemPyPI
 		} else {
 			m.ecosystem = model.EcosystemNPM
 		}
+		return m.startFocus()
 	case 2:
 		modes := []render.ColorMode{render.ColorAuto, render.ColorAlways, render.ColorNever}
 		index := 0
@@ -565,15 +573,16 @@ func (m *Model) changeSetting(backward bool) tea.Cmd {
 		m.colorMode = modes[index]
 		m.color = render.ColorEnabled(m.colorMode, true, m.lookupEnv)
 		m.styles = newStyles(m.color)
+		return m.startFocus()
 	case 3:
 		// 动画开关切换后立即生效：关闭时清除所有进行中的动画。
 		m.anim.enabled = !m.anim.enabled
 		if !m.anim.enabled {
 			m.stopAnimations()
 			m.advanceGeneration()
-		} else {
-			return m.startFocus()
+			return nil
 		}
+		return m.startFocus()
 	case 4:
 		return m.returnToMenu()
 	}

@@ -412,17 +412,21 @@ func (m *Model) demoView() string {
 	for index, scenario := range m.demos {
 		marker := "  "
 		title := m.demoTitle(scenario)
+		focus := ""
 		if index == m.demoAt {
 			marker = m.styles.accentText("› ")
 			title = m.styles.selectedText(title)
+			if m.anim.focus > 0 && m.anim.enabled {
+				focus = m.styles.accentText(" ◂")
+			}
 		}
 		iconText := m.demoIconText(scenario.ID)
 		// 窄终端下按显示宽度截断标题，避免图标把标题推出右边缘。
-		titleWidth := m.contentWidth() - displayWidth(marker) - 1 - 2 - displayWidth(iconText)
+		titleWidth := m.contentWidth() - displayWidth(marker) - 1 - 2 - displayWidth(iconText) - displayWidth(focus)
 		if titleWidth < 1 {
 			titleWidth = 1
 		}
-		fmt.Fprintf(&b, "%s%d  %s%s\n", marker, index+1, iconText, truncatePlain(title, titleWidth))
+		fmt.Fprintf(&b, "%s%d  %s%s%s\n", marker, index+1, iconText, truncatePlain(title, titleWidth), focus)
 		indent := strings.Repeat(" ", 6+displayWidth(iconText))
 		for _, line := range wrapPlain(m.demoDescription(scenario), m.contentWidth()-displayWidth(indent)) {
 			b.WriteString(indent + m.styles.dimText(line) + "\n")
@@ -483,8 +487,12 @@ func (m *Model) settingsView() string {
 	for index, row := range rows {
 		marker := "  "
 		selected := index == m.settingsAt
+		focus := ""
 		if selected {
 			marker = m.styles.accentText("› ")
+			if m.anim.focus > 0 && m.anim.enabled {
+				focus = m.styles.accentText(" ◂")
+			}
 		}
 		iconText := ""
 		if glyph := m.icons.glyph(row.icon); glyph != "" {
@@ -500,6 +508,9 @@ func (m *Model) settingsView() string {
 			text := row.value
 			if selected {
 				text = m.styles.selectedText(text)
+			}
+			if focus != "" {
+				text += focus
 			}
 			b.WriteString(marker + iconText + text + "\n")
 			continue
@@ -520,6 +531,9 @@ func (m *Model) settingsView() string {
 			}
 			if selected {
 				line = m.styles.selectedText(line)
+			}
+			if selected && focus != "" && lineIndex == 0 {
+				line += focus
 			}
 			b.WriteString(prefix + line + "\n")
 		}

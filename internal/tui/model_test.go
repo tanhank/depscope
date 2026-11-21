@@ -604,12 +604,22 @@ func TestMouseInteraction(t *testing.T) {
 	// 恢复标准窗口大小
 	model.Update(tea.WindowSizeMsg{Width: 100, Height: 32})
 
-	// 2. 测试主菜单中的鼠标左键点击
+	// 2. 测试主菜单中的鼠标悬停与点击
 	width := model.contentWidth()
 	height := model.contentHeight()
 	size := selectLogoSize(width, height)
 	logoLines := len(strings.Split(model.brandedLogo(size), "\n"))
 	startMenuY := logoLines + 2 + 2
+
+	// 测试鼠标悬停在第二个菜单项 (Scan my project)
+	send(model, tea.MouseMsg{
+		Action: tea.MouseActionMotion,
+		X:      10,
+		Y:      2 + startMenuY + 1,
+	})
+	if model.menuIndex != 1 {
+		t.Fatalf("menuIndex = %d after hover, want 1", model.menuIndex)
+	}
 
 	// 点击第一个菜单项 (Check a single package)
 	send(model, tea.MouseMsg{
@@ -644,12 +654,22 @@ func TestMouseInteraction(t *testing.T) {
 		t.Fatalf("screen = %v after clicking settings entry, want %v", model.screen, screenSettings)
 	}
 
-	// 4. 测试设置界面中的点击切换
+	// 4. 测试设置界面中的悬停与点击切换
 	introLines := len(wrapPlain(model.text(i18n.KeySettingsIntro), width))
-	startSettingsY := 1 + 1 + introLines + 2
-	initialLanguage := model.language
+	startSettingsY := 1 + introLines + 1
+
+	// 测试悬停在第 1 行设置项 (Ecosystem)
+	send(model, tea.MouseMsg{
+		Action: tea.MouseActionMotion,
+		X:      10,
+		Y:      2 + startSettingsY + 1,
+	})
+	if model.settingsAt != 1 {
+		t.Fatalf("settingsAt = %d after hover, want 1", model.settingsAt)
+	}
 
 	// 点击第 0 行设置项 (Language)
+	initialLanguage := model.language
 	send(model, tea.MouseMsg{
 		Action: tea.MouseActionPress,
 		Button: tea.MouseButtonLeft,
