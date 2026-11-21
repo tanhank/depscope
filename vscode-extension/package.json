@@ -2,7 +2,7 @@
   "name": "depscope-vscode",
   "displayName": "DepScope",
   "description": "Dependency security inspection and vulnerability intelligence for VS Code",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "JanghoTan",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
