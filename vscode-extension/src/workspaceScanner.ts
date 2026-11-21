@@ -97,8 +97,10 @@ async function extractDependenciesFromPackageJson(filePath: string): Promise<Dis
     }
 
     const lockPath = path.join(path.dirname(filePath), "package-lock.json");
+    const yarnPath = path.join(path.dirname(filePath), "yarn.lock");
     let lockPackages: Record<string, { version?: string }> | null = null;
     let lockDependencies: Record<string, { version?: string }> | null = null;
+    const yarnVersions: Record<string, string> = {};
 
     if (fs.existsSync(lockPath)) {
       try {
@@ -111,6 +113,36 @@ async function extractDependenciesFromPackageJson(filePath: string): Promise<Dis
         lockDependencies = parsed.dependencies || null;
       } catch {
         // 容忍损坏或格式不兼容的 lock 文件
+      }
+    } else if (fs.existsSync(yarnPath)) {
+      try {
+        // 简易解析 yarn.lock v1 版本
+        const yarnRaw = await fs.promises.readFile(yarnPath, "utf8");
+        const lines = yarnRaw.split(/\r?\n/);
+        let currentNames: string[] = [];
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) {
+            continue;
+          }
+          if (!line.startsWith(" ") && !line.startsWith("\t")) {
+            const header = trimmed.replace(/:$/, "");
+            currentNames = header.split(",").map((part) => {
+              const p = part.trim().replace(/^["']|["']$/g, "");
+              const atIdx = p.lastIndexOf("@");
+              return atIdx > 0 ? p.substring(0, atIdx) : p;
+            });
+          } else if (trimmed.startsWith("version ")) {
+            const ver = trimmed.replace(/^version\s+/, "").replace(/^["']|["']$/g, "").trim();
+            for (const n of currentNames) {
+              if (!yarnVersions[n]) {
+                yarnVersions[n] = ver;
+              }
+            }
+          }
+        }
+      } catch {
+        // 容忍无法解析的 yarn.lock
       }
     }
 
@@ -125,6 +157,9 @@ async function extractDependenciesFromPackageJson(filePath: string): Promise<Dis
       }
       if (!resolvedVersion && lockDependencies && lockDependencies[name]?.version) {
         resolvedVersion = lockDependencies[name].version;
+      }
+      if (!resolvedVersion && yarnVersions[name]) {
+        resolvedVersion = yarnVersions[name];
       }
 
       if (!resolvedVersion && typeof spec === "string") {

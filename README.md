@@ -226,17 +226,17 @@ All commands and exit codes:
 | Command | Purpose |
 | --- | --- |
 | `depscope` | Open the interactive terminal app |
-| `depscope scan <package>` | Scan one npm or PyPI package |
-| `depscope project [path]` | Scan a project directory (default: `.`) |
-| `depscope compare <left> <right>` | Compare two packages side by side |
-| `depscope inventory` | List global npm and Python packages |
-| `depscope demo [scenario]` | Run an offline deterministic demo |
+| `depscope scan <package> [--json]` | Scan one npm or PyPI package |
+| `depscope project [path] [--json]` | Scan a project directory (default: `.`) |
+| `depscope compare <left> <right> [--json]` | Compare two packages side by side |
+| `depscope inventory [--json]` | List global npm and Python packages |
+| `depscope demo [scenario] [--json]` | Run an offline deterministic demo |
 | `depscope demo list` | List demo scenarios |
 | `depscope mcp [--allowed-path DIR]` | Run local Model Context Protocol (MCP) server over stdio |
 | `depscope help` | Show usage |
 | `depscope version` | Show the version |
 
-Global flags go before the command: `--no-color`, `--color=auto|always|never`, `--help`, and `--version`. Without a terminal, `depscope` prints help instead of starting the interactive app.
+Global flags go before the command: `--json`, `--no-color`, `--color=auto|always|never`, `--help`, and `--version`. Without a terminal, `depscope` prints help instead of starting the interactive app. Passing `--json` outputs machine-readable JSON validated against the canonical schema.
 
 The interactive app animates a short brand reveal, navigation feedback, a loading indicator, and a completion transition. Animations are disabled by `DEPSCOPE_NO_ANIMATION=1`, by `TERM=dumb`, and in CI environments; every screen stays fully usable with animation and color disabled. `NO_COLOR` disables color only and never affects navigation.
 
@@ -549,12 +549,13 @@ DEPSCOPE_LIVE_TESTS=1 go test -tags live -run TestLiveSmokeNPM ./internal/live/
 | TUI languages | English and Simplified Chinese, selected in Settings; session-only. CLI, API, and website remain English |
 | TUI icons | Semantic glyphs paired with text; ASCII and icon-free modes. CLI output remains icon-free |
 | Local HTTP API | Implemented; local, unauthenticated, process-local limits |
-| Website (single scan, comparison, demo records) | Implemented locally; not deployed |
-| VS Code extension | Implemented (sidebar wizard, 4-tier tree, webview details, diagnostics); tested locally |
+| Website (single scan, comparison, demo records) | Implemented locally; standalone Dockerfile and compose provided |
+| VS Code extension | Implemented (sidebar wizard, 4-tier tree, webview details, diagnostics); packaged `.vsix` attached to GitHub releases |
 | CI and GoReleaser configuration | CI and the release workflow run on GitHub; tagged releases publish CLI and API archives with a SHA-256 `checksums.txt` (not signed) |
-| Hosted API or hosted website | Not provided |
+| Hosted API or hosted website | Run via `docker compose up` or deploy container |
 | License | Apache License 2.0; copyright 2026 Jangho Tan |
-| Recursive Python resolution, more lockfiles, CLI JSON output, project/inventory API serialization | Not implemented |
+| Supported lockfiles | npm `package-lock.json` (v2/v3), `yarn.lock` (v1), Python exact `requirements.txt` |
+| CLI JSON output | Implemented (`--json` flag on all inspection commands) |
 
 See [architecture decisions](docs/architecture.md) for design history and open items.
 

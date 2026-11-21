@@ -42,6 +42,23 @@ A successful frozen install must leave `pnpm-lock.yaml` unchanged; check with `g
 
 For a production build, run `pnpm build` and then `pnpm start` from `web/`. Set the public site origin in `DEPSCOPE_SITE_URL` at build time so absolute Open Graph image metadata uses the deployed origin. The development default is `http://localhost:3000`.
 
+## Docker deployment
+
+Build and run the production container:
+
+```sh
+docker build -t depscope-web ./web
+docker run -p 3000:3000 -e DEPSCOPE_API_BASE_URL=http://host.docker.internal:8080 depscope-web
+```
+
+Or start both the Go HTTP API and the Next.js Web UI together with Docker Compose from the repository root:
+
+```sh
+docker compose up -d
+```
+
+Visit `http://localhost:3000`.
+
 ## Configuration
 
 | Variable | Default | Purpose |

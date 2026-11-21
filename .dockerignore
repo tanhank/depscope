@@ -1,0 +1,10 @@
+.git
+bin
+dist
+node_modules
+web
+vscode-extension
+*.test
+*.out
+coverage.*
+.scratch-prep

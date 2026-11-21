@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -395,7 +396,7 @@ func liveReport(t *testing.T, status domain.ScanStatus) domain.ScanReport {
 				Package:        identity,
 				Version:        &version,
 				Relationship:   domain.DependencyRoot,
-				DependencyPath: []string{"fixture-package"},
+				DependencyPath: []string{"root"},
 				Dependencies:   []string{},
 			}},
 		},
@@ -406,5 +407,78 @@ func liveReport(t *testing.T, status domain.ScanStatus) domain.ScanReport {
 			RetrievedAt: cliTime,
 		}},
 		Limitations: []domain.Limitation{},
+	}
+}
+
+// TestScanJSONOutput 验证单包扫描支持输出符合契约的机器可读 JSON。
+func TestScanJSONOutput(t *testing.T) {
+	report := liveReport(t, domain.StatusFindings)
+	service := &fakeService{report: report}
+	code, out, errOut := runCLI(t, service, nil, false, "scan", "npm:fixture-package@1.0.0", "--json")
+	if code != 0 {
+		t.Fatalf("scan --json code = %d (stderr: %s)", code, errOut)
+	}
+	var decoded domain.ScanReport
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("failed to decode JSON output: %v\noutput: %s", err, out)
+	}
+	if decoded.Target.Package.Name != "fixture-package" {
+		t.Fatalf("target package name = %q, want fixture-package", decoded.Target.Package.Name)
+	}
+	if len(decoded.Findings) != 1 || decoded.Findings[0].ID != "FIXTURE-2026-0001" {
+		t.Fatalf("decoded findings = %+v", decoded.Findings)
+	}
+}
+
+// TestScanGlobalJSONFlag 验证全局 --json 选项同样生效。
+func TestScanGlobalJSONFlag(t *testing.T) {
+	report := liveReport(t, domain.StatusFindings)
+	service := &fakeService{report: report}
+	code, out, errOut := runCLI(t, service, nil, false, "--json", "scan", "npm:fixture-package@1.0.0")
+	if code != 0 {
+		t.Fatalf("--json scan code = %d (stderr: %s)", code, errOut)
+	}
+	var decoded domain.ScanReport
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("failed to decode JSON output: %v\noutput: %s", err, out)
+	}
+	if decoded.Target.Package.Name != "fixture-package" {
+		t.Fatalf("target package name = %q, want fixture-package", decoded.Target.Package.Name)
+	}
+}
+
+// TestDemoJSONOutput 验证离线演示输出符合契约的 JSON。
+func TestDemoJSONOutput(t *testing.T) {
+	service := &app.LiveService{}
+	code, out, errOut := runCLI(t, service, nil, false, "demo", "clean", "--json")
+	if code != 0 {
+		t.Fatalf("demo --json code = %d (stderr: %s)", code, errOut)
+	}
+	var decoded domain.ScanReport
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("failed to decode JSON demo output: %v\noutput: %s", err, out)
+	}
+	if decoded.Status != domain.StatusClean {
+		t.Fatalf("decoded demo status = %q, want clean", decoded.Status)
+	}
+}
+
+// TestProjectJSONOutput 验证项目扫描支持 JSON 序列化输出。
+func TestProjectJSONOutput(t *testing.T) {
+	res := project.Result{
+		Status: domain.StatusClean,
+		Root:   "/test/project",
+	}
+	service := &fakeService{projectResult: res}
+	code, out, errOut := runCLI(t, service, nil, false, "project", ".", "--json")
+	if code != 0 {
+		t.Fatalf("project --json code = %d (stderr: %s)", code, errOut)
+	}
+	var decoded project.Result
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("failed to decode JSON project output: %v\noutput: %s", err, out)
+	}
+	if decoded.Root != "/test/project" {
+		t.Fatalf("decoded root = %q, want /test/project", decoded.Root)
 	}
 }

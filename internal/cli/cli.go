@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/janghotan/depscope/internal/app"
+	"github.com/janghotan/depscope/internal/contract"
 	"github.com/janghotan/depscope/internal/mcp"
 	"github.com/janghotan/depscope/internal/model"
 	"github.com/janghotan/depscope/internal/render"
@@ -77,6 +79,7 @@ func Run(ctx context.Context, opts Options) int {
 		return 0
 	}
 	colorMode := flags.mode
+	jsonOutput := flags.jsonOutput
 	args := flags.args
 
 	if len(args) == 0 {
@@ -114,14 +117,15 @@ func Run(ctx context.Context, opts Options) int {
 		return 1
 	}
 	environment := commandEnvironment{
-		ctx:       ctx,
-		service:   service,
-		out:       out,
-		errOut:    errOut,
-		colorMode: colorMode,
-		lookupEnv: lookupEnv,
-		outTTY:    opts.IO.OutTTY,
-		ecosystem: defaultEcosystem,
+		ctx:        ctx,
+		service:    service,
+		out:        out,
+		errOut:     errOut,
+		colorMode:  colorMode,
+		jsonOutput: jsonOutput,
+		lookupEnv:  lookupEnv,
+		outTTY:     opts.IO.OutTTY,
+		ecosystem:  defaultEcosystem,
 	}
 
 	command := args[0]
@@ -153,10 +157,11 @@ func Run(ctx context.Context, opts Options) int {
 }
 
 type globalFlags struct {
-	mode    render.ColorMode
-	args    []string
-	help    bool
-	version bool
+	mode       render.ColorMode
+	args       []string
+	help       bool
+	version    bool
+	jsonOutput bool
 }
 
 // parseGlobalFlags 解析命令前的全局选项；返回码 -1 表示继续执行命令。
@@ -166,6 +171,7 @@ func parseGlobalFlags(args []string, initial string, errOut io.Writer) (globalFl
 		printError(errOut, err)
 		return globalFlags{mode: render.ColorAuto}, 2
 	}
+	jsonOutput := false
 	rest := append([]string(nil), args...)
 	for len(rest) > 0 {
 		arg := rest[0]
@@ -173,15 +179,18 @@ func parseGlobalFlags(args []string, initial string, errOut io.Writer) (globalFl
 		case arg == "--no-color":
 			mode = render.ColorNever
 			rest = rest[1:]
+		case arg == "--json":
+			jsonOutput = true
+			rest = rest[1:]
 		case arg == "--color":
 			if len(rest) < 2 {
 				printError(errOut, errors.New("--color requires auto, always, or never"))
-				return globalFlags{mode: mode, args: rest}, 2
+				return globalFlags{mode: mode, jsonOutput: jsonOutput, args: rest}, 2
 			}
 			parsed, err := render.ParseColorMode(rest[1])
 			if err != nil {
 				printError(errOut, err)
-				return globalFlags{mode: mode, args: rest}, 2
+				return globalFlags{mode: mode, jsonOutput: jsonOutput, args: rest}, 2
 			}
 			mode = parsed
 			rest = rest[2:]
@@ -189,24 +198,24 @@ func parseGlobalFlags(args []string, initial string, errOut io.Writer) (globalFl
 			parsed, err := render.ParseColorMode(strings.TrimPrefix(arg, "--color="))
 			if err != nil {
 				printError(errOut, err)
-				return globalFlags{mode: mode, args: rest}, 2
+				return globalFlags{mode: mode, jsonOutput: jsonOutput, args: rest}, 2
 			}
 			mode = parsed
 			rest = rest[1:]
 		case arg == "--help" || arg == "-h":
-			return globalFlags{mode: mode, help: true}, -1
+			return globalFlags{mode: mode, jsonOutput: jsonOutput, help: true}, -1
 		case arg == "--version" || arg == "-V":
-			return globalFlags{mode: mode, version: true}, -1
+			return globalFlags{mode: mode, jsonOutput: jsonOutput, version: true}, -1
 		case arg == "--":
-			return globalFlags{mode: mode, args: rest[1:]}, -1
+			return globalFlags{mode: mode, jsonOutput: jsonOutput, args: rest[1:]}, -1
 		case strings.HasPrefix(arg, "-"):
 			printError(errOut, fmt.Errorf("unknown flag %q", arg))
-			return globalFlags{mode: mode, args: rest}, 2
+			return globalFlags{mode: mode, jsonOutput: jsonOutput, args: rest}, 2
 		default:
-			return globalFlags{mode: mode, args: rest}, -1
+			return globalFlags{mode: mode, jsonOutput: jsonOutput, args: rest}, -1
 		}
 	}
-	return globalFlags{mode: mode, args: rest}, -1
+	return globalFlags{mode: mode, jsonOutput: jsonOutput, args: rest}, -1
 }
 
 func ensureService(service app.Service) (app.Service, error) {
@@ -221,14 +230,29 @@ func ensureService(service app.Service) (app.Service, error) {
 }
 
 type commandEnvironment struct {
-	ctx       context.Context
-	service   app.Service
-	out       io.Writer
-	errOut    io.Writer
-	colorMode render.ColorMode
-	lookupEnv func(string) string
-	outTTY    bool
-	ecosystem model.Ecosystem
+	ctx        context.Context
+	service    app.Service
+	out        io.Writer
+	errOut     io.Writer
+	colorMode  render.ColorMode
+	jsonOutput bool
+	lookupEnv  func(string) string
+	outTTY     bool
+	ecosystem  model.Ecosystem
+}
+
+// filterJSONFlag 从命令行参数中剔除 --json 并返回是否启用了 JSON 输出。
+func filterJSONFlag(args []string, initial bool) ([]string, bool) {
+	jsonOutput := initial
+	filtered := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "--json" {
+			jsonOutput = true
+		} else {
+			filtered = append(filtered, arg)
+		}
+	}
+	return filtered, jsonOutput
 }
 
 func (e commandEnvironment) theme() render.Theme {
@@ -239,8 +263,9 @@ func (e commandEnvironment) theme() render.Theme {
 }
 
 func (e commandEnvironment) scan(args []string) int {
+	args, jsonOutput := filterJSONFlag(args, e.jsonOutput)
 	if len(args) != 1 {
-		return e.usage("usage: depscope scan <package>", "Example: depscope scan lodash@4.17.21")
+		return e.usage("usage: depscope scan <package> [--json]", "Example: depscope scan lodash@4.17.21")
 	}
 	request, err := app.ParsePackageSpec(args[0], e.ecosystem)
 	if err != nil {
@@ -251,6 +276,19 @@ func (e commandEnvironment) scan(args []string) int {
 		printError(e.errOut, err)
 		return 1
 	}
+	if jsonOutput {
+		if err := contract.ValidateReport(report); err != nil {
+			printError(e.errOut, fmt.Errorf("validate report: %w", err))
+			return 1
+		}
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			printError(e.errOut, err)
+			return 1
+		}
+		fmt.Fprintln(e.out, string(data))
+		return statusExitCode(report.Status)
+	}
 	if err := writeDocument(e.out, render.FromReport(report), e.theme()); err != nil {
 		printError(e.errOut, err)
 		return 1
@@ -259,8 +297,9 @@ func (e commandEnvironment) scan(args []string) int {
 }
 
 func (e commandEnvironment) project(args []string) int {
+	args, jsonOutput := filterJSONFlag(args, e.jsonOutput)
 	if len(args) > 1 {
-		return e.usage("usage: depscope project [path]", "The path defaults to the current directory.")
+		return e.usage("usage: depscope project [path] [--json]", "The path defaults to the current directory.")
 	}
 	path := "."
 	if len(args) == 1 {
@@ -275,6 +314,15 @@ func (e commandEnvironment) project(args []string) int {
 		printError(e.errOut, err)
 		return 1
 	}
+	if jsonOutput {
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			printError(e.errOut, err)
+			return 1
+		}
+		fmt.Fprintln(e.out, string(data))
+		return statusExitCode(result.Status)
+	}
 	if err := writeDocument(e.out, render.FromProject(result), e.theme()); err != nil {
 		printError(e.errOut, err)
 		return 1
@@ -283,13 +331,23 @@ func (e commandEnvironment) project(args []string) int {
 }
 
 func (e commandEnvironment) inventory(args []string) int {
+	args, jsonOutput := filterJSONFlag(args, e.jsonOutput)
 	if len(args) != 0 {
-		return e.usage("usage: depscope inventory", "The inventory is read-only and never installs or executes packages.")
+		return e.usage("usage: depscope inventory [--json]", "The inventory is read-only and never installs or executes packages.")
 	}
 	result, err := e.service.ScanInventory(e.ctx, nil)
 	if err != nil {
 		printError(e.errOut, err)
 		return 1
+	}
+	if jsonOutput {
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			printError(e.errOut, err)
+			return 1
+		}
+		fmt.Fprintln(e.out, string(data))
+		return statusExitCode(result.Status)
 	}
 	if err := writeDocument(e.out, render.FromInventory(result), e.theme()); err != nil {
 		printError(e.errOut, err)
@@ -299,8 +357,9 @@ func (e commandEnvironment) inventory(args []string) int {
 }
 
 func (e commandEnvironment) compare(args []string) int {
+	args, jsonOutput := filterJSONFlag(args, e.jsonOutput)
 	if len(args) != 2 {
-		return e.usage("usage: depscope compare <left> <right>", "Example: depscope compare lodash@4.17.21 pypi:requests==2.31.0")
+		return e.usage("usage: depscope compare <left> <right> [--json]", "Example: depscope compare lodash@4.17.21 pypi:requests==2.31.0")
 	}
 	left, err := app.ParsePackageSpec(args[0], e.ecosystem)
 	if err != nil {
@@ -319,6 +378,18 @@ func (e commandEnvironment) compare(args []string) int {
 		printError(e.errOut, err)
 		return 1
 	}
+	if jsonOutput {
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			printError(e.errOut, err)
+			return 1
+		}
+		fmt.Fprintln(e.out, string(data))
+		if result.Left == nil && result.Right == nil {
+			return 1
+		}
+		return 0
+	}
 	text := render.Comparison(result.LeftRequest.String(), result.RightRequest.String(), result.Left, result.Right, result.LeftErr, result.RightErr, e.theme())
 	if _, err := fmt.Fprintln(e.out, text); err != nil {
 		printError(e.errOut, err)
@@ -331,8 +402,9 @@ func (e commandEnvironment) compare(args []string) int {
 }
 
 func (e commandEnvironment) demo(args []string) int {
+	args, jsonOutput := filterJSONFlag(args, e.jsonOutput)
 	if len(args) > 1 {
-		return e.usage("usage: depscope demo [scenario|list]", "Run 'depscope demo list' to see available scenarios.")
+		return e.usage("usage: depscope demo [scenario|list] [--json]", "Run 'depscope demo list' to see available scenarios.")
 	}
 	scenarios := e.service.DemoScenarios()
 	if len(args) == 1 && strings.EqualFold(args[0], "list") {
@@ -359,6 +431,19 @@ func (e commandEnvironment) demo(args []string) int {
 	if err != nil {
 		printError(e.errOut, err)
 		return 1
+	}
+	if jsonOutput {
+		if err := contract.ValidateReport(report); err != nil {
+			printError(e.errOut, fmt.Errorf("validate report: %w", err))
+			return 1
+		}
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			printError(e.errOut, err)
+			return 1
+		}
+		fmt.Fprintln(e.out, string(data))
+		return statusExitCode(report.Status)
 	}
 	if err := writeDocument(e.out, render.FromReport(report), e.theme()); err != nil {
 		printError(e.errOut, err)
@@ -474,11 +559,11 @@ const helpText = `DepScope - dependency risk, explained.
 
 Usage:
   depscope                          Open the interactive terminal app
-  depscope scan <package>           Scan one npm or PyPI package
-  depscope project [path]           Scan a project directory (default: .)
-  depscope compare <left> <right>   Compare two packages side by side
-  depscope inventory                List global npm and Python packages
-  depscope demo [scenario]          Run an offline deterministic demo
+  depscope scan <package> [--json]  Scan one npm or PyPI package
+  depscope project [path] [--json]  Scan a project directory (default: .)
+  depscope compare <left> <right> [--json] Compare two packages side by side
+  depscope inventory [--json]       List global npm and Python packages
+  depscope demo [scenario] [--json] Run an offline deterministic demo
   depscope demo list                List demo scenarios
   depscope mcp [--allowed-path DIR] Run local MCP server over stdio
   depscope help                     Show this help
@@ -491,6 +576,7 @@ Package syntax:
   npm:lodash                        explicit ecosystem
 
 Global flags (before the command):
+  --json                            Output machine-readable JSON
   --no-color                        Disable ANSI color
   --color=auto|always|never         Control ANSI color
 

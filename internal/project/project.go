@@ -23,6 +23,8 @@ type Format string
 const (
 	// FormatNPMPackageLock 表示 package.json 与 lockfileVersion 2 或 3 的 package-lock.json。
 	FormatNPMPackageLock Format = "npm-package-lock-v2-v3"
+	// FormatNPMYarnLock 表示 package.json 与 yarn.lock v1。
+	FormatNPMYarnLock Format = "npm-yarn-lock-v1"
 	// FormatPythonRequirements 表示 requirements.txt 中的直接依赖；本阶段没有 Python 锁文件。
 	FormatPythonRequirements Format = "python-requirements-txt"
 )
@@ -106,7 +108,6 @@ type Detection struct {
 }
 
 var unsupportedDependencyFiles = map[string]struct{}{
-	"yarn.lock":           {},
 	"pnpm-lock.yaml":      {},
 	"npm-shrinkwrap.json": {},
 	"bun.lockb":           {},
@@ -160,6 +161,7 @@ func Detect(root string, limits Limits) (Detection, error) {
 
 	packageEntry, hasPackage := byName[manifestPackageJSON]
 	lockEntry, hasLock := byName[lockfilePackageLockJSON]
+	yarnEntry, hasYarn := byName[lockfileYarnLock]
 
 	if hasPackage && isSymlink(packageEntry) {
 		add("SYMLINKED_FILE_UNSUPPORTED", "package.json is a symbolic link and was not followed.")
@@ -185,9 +187,19 @@ func Detect(root string, limits Limits) (Detection, error) {
 			default:
 				candidate.LockfilePath = lockfilePackageLockJSON
 			}
+		} else if hasYarn {
+			candidate.Format = FormatNPMYarnLock
+			switch {
+			case isSymlink(yarnEntry):
+				add("SYMLINKED_FILE_UNSUPPORTED", "yarn.lock is a symbolic link and was not followed.")
+			case !isRegular(yarnEntry):
+				add("LOCKFILE_NOT_REGULAR", "yarn.lock is not a regular file and was not read.")
+			default:
+				candidate.LockfilePath = lockfileYarnLock
+			}
 		}
 		if candidate.LockfilePath == "" {
-			add("LOCKFILE_MISSING", "package-lock.json is missing; dependency versions cannot be resolved from the manifest alone and latest versions are never substituted.")
+			add("LOCKFILE_MISSING", "package-lock.json or yarn.lock is missing; dependency versions cannot be resolved from the manifest alone and latest versions are never substituted.")
 		}
 		detection.Candidates = append(detection.Candidates, candidate)
 	} else if hasLock {
@@ -195,6 +207,12 @@ func Detect(root string, limits Limits) (Detection, error) {
 			add("SYMLINKED_FILE_UNSUPPORTED", "package-lock.json is a symbolic link and was not followed.")
 		} else {
 			add("MANIFEST_MISSING", "package-lock.json exists without package.json, so declared direct dependencies cannot be identified.")
+		}
+	} else if hasYarn {
+		if isSymlink(yarnEntry) {
+			add("SYMLINKED_FILE_UNSUPPORTED", "yarn.lock is a symbolic link and was not followed.")
+		} else {
+			add("MANIFEST_MISSING", "yarn.lock exists without package.json, so declared direct dependencies cannot be identified.")
 		}
 	}
 
@@ -427,6 +445,8 @@ func Scan(ctx context.Context, root string, opts Options) (Result, error) {
 		switch {
 		case candidate.Ecosystem == model.EcosystemNPM && candidate.Format == FormatNPMPackageLock:
 			project, err = parseNPMProject(ctx, absolute, candidate, budget, clock)
+		case candidate.Ecosystem == model.EcosystemNPM && candidate.Format == FormatNPMYarnLock:
+			project, err = parseYarnProject(ctx, absolute, candidate, budget, clock)
 		case candidate.Ecosystem == model.EcosystemPyPI && candidate.Format == FormatPythonRequirements:
 			project, err = parsePythonProject(ctx, absolute, candidate, budget, clock)
 		default:
