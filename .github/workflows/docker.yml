@@ -57,13 +57,13 @@ jobs:
             ghcr.io/${{ steps.meta.outputs.repo }}-api:${{ steps.meta.outputs.version }}
             ghcr.io/${{ steps.meta.outputs.repo }}-api:latest
 
-      # 构建并推送 depscope-web 镜像
+      # 构建并推送 depscope-web 镜像 (Next.js SWC/Turbopack 原生二进制在 QEMU arm64 模拟下会触发 SIGILL，采用 linux/amd64 生产镜像)
       - name: Build and push Web image
         uses: docker/build-push-action@v6
         with:
           context: ./web
           file: ./web/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: |
             ghcr.io/${{ steps.meta.outputs.repo }}-web:${{ steps.meta.outputs.version }}
